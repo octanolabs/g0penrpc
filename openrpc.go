@@ -1,85 +1,78 @@
+//
 package openrpc
 
 import (
 	"encoding/json"
 	"errors"
-	"github.com/qri-io/jsonschema"
+	"fmt"
 	"reflect"
 )
 
 // NewDocument populates with references the components obj
-
-func NewDocument(methods []Method, info Info) *DocumentSpec1 {
+func NewDocument(methods []*Method, info *Info) *DocumentSpec1 {
 	return &DocumentSpec1{
-		OpenRPC:      "1.2",
+		OpenRPC:      "1.2.0",
 		Info:         info,
 		Servers:      nil,
 		Methods:      methods,
-		Components:   Components{},
-		ExternalDocs: ExternalDocs{},
+		Components:   &Components{},
+		ExternalDocs: nil,
 	}
 }
 
-// MakeSchema creates a json schema of t and un-marshals it into schema
+//TODO:
+// - figure out why integer and number schemas are empty;
 
 func MakeSchema(t reflect.Type, schema Schema) error {
 	switch t.Kind() {
-	case reflect.Int:
-	case reflect.Int8:
-	case reflect.Int16:
-	case reflect.Int32:
-	case reflect.Int64:
-	case reflect.Uint:
-	case reflect.Uint8:
-	case reflect.Uint16:
-	case reflect.Uint32:
-	case reflect.Uint64:
-		return schema.UnmarshalJSON([]byte("{ type: integer }"))
-	case reflect.Float32:
-	case reflect.Float64:
-		return schema.UnmarshalJSON([]byte("{ type: number }"))
-	case reflect.Slice:
-	case reflect.Array:
-		return handleArraySchema(t, schema)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return schema.UnmarshalJSON([]byte(integerSchema))
+	case reflect.Float32, reflect.Float64:
+		return schema.UnmarshalJSON([]byte(numberSchema))
+	case reflect.Slice, reflect.Array:
+		return buildArraySchema(t, schema)
 	case reflect.String:
-		return schema.UnmarshalJSON([]byte("{ type: string }"))
+		return schema.UnmarshalJSON([]byte(stringSchema))
 	case reflect.Bool:
-		return schema.UnmarshalJSON([]byte("{ type: boolean }"))
+		return schema.UnmarshalJSON([]byte(boolSchema))
 	case reflect.Map:
-		return handleMapSchema(t, schema)
+		return buildMapSchema(t, schema)
 	case reflect.Struct:
-		return handleStructSchema(t, schema)
+		return buildStructSchema(t, schema)
 	case reflect.Ptr:
 		d := t.Elem()
 		return MakeSchema(d, schema)
 	case reflect.Interface:
-		return schema.UnmarshalJSON([]byte("{}"))
+		return schema.UnmarshalJSON([]byte(anySchema))
 	default:
 		return errors.New("Invalid kind: " + t.Kind().String())
 	}
-	return nil
 }
 
-func handleStructSchema(t reflect.Type, schema Schema) error {
+func buildStructSchema(t reflect.Type, schema Schema) error {
 
-	s := &struct {
-		T                    string            `json:"type"`
-		Properties           map[string]Schema `json:"properties"`
-		AdditionalProperties interface{}       `json:"additionalProperties,omitempty"`
-	}{T: "object", Properties: make(map[string]Schema)}
+	s := map[string]interface{}{
+		"type":       "object",
+		"properties": nil,
+	}
+
+	//methods with pointer receiver should be tested against pointer to structs/etc
+
+	props := map[string]Schema{}
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
 		sch := NewSchema()
 
-		err := MakeSchema(field.Type, sch)
+		err := sch.UnmarshalJSON([]byte(stringSchema))
 		if err != nil {
-			return errors.New("error handling struct type: " + t.PkgPath() + " field: " + field.Name + "" + err.Error())
+			return errors.New("error handling struct type: " + fmt.Sprintf("%v.%v field: %v :", t.PkgPath(), t.Name(), field.Name) + err.Error())
 		}
-		s.Properties[field.Name] = sch
+		props[field.Name] = sch
 	}
-	s.AdditionalProperties = false
+
+	s["properties"] = props
 
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -89,21 +82,22 @@ func handleStructSchema(t reflect.Type, schema Schema) error {
 	return schema.UnmarshalJSON(data)
 }
 
-func handleMapSchema(t reflect.Type, schema Schema) error {
-	s := &struct {
-		T                    string                        `json:"type"`
-		Properties           map[string]*jsonschema.Schema `json:"properties"`
-		AdditionalProperties interface{}                   `json:"additionalProperties,omitempty"`
-	}{T: "object", Properties: make(map[string]*jsonschema.Schema)}
+// Map and array schemas should be handled with references inside the registry
 
-	valueType := t.Elem()
+func buildMapSchema(t reflect.Type, schema Schema) error {
 
 	sch := NewSchema()
+
+	s := map[string]interface{}{
+		"type":                 "object",
+		"additionalProperties": sch,
+	}
+	valueType := t.Elem()
+
 	err := MakeSchema(valueType, sch)
 	if err != nil {
 		return errors.New("error handling map type: " + err.Error())
 	}
-	s.AdditionalProperties = sch
 
 	data, err := json.Marshal(s)
 	if err != nil {
@@ -113,23 +107,25 @@ func handleMapSchema(t reflect.Type, schema Schema) error {
 	return schema.UnmarshalJSON(data)
 }
 
-func handleArraySchema(t reflect.Type, schema Schema) error {
-	s := &struct {
-		T        string `json:"type"`
-		Items    Schema `json:"items"`
-		MaxItems int    `json:"maxItems,omitempty"`
-	}{T: "array"}
-
-	elemType := t.Elem()
+func buildArraySchema(t reflect.Type, schema Schema) error {
 
 	sch := NewSchema()
-	err := MakeSchema(elemType, sch)
-	if err != nil {
-		return errors.New("error handling map type: " + err.Error())
+
+	s := map[string]interface{}{
+		"type":  "array",
+		"items": sch,
 	}
 
 	if t.Kind() == reflect.Array {
-		s.MaxItems = t.Len()
+		s["maxItems"] = t.Len()
+	}
+
+	elemType := t.Elem()
+
+	// TODO: this function does not check if the type in question is marshalable/unmarshalable
+	err := MakeSchema(elemType, sch)
+	if err != nil {
+		return errors.New("error handling array type: " + err.Error())
 	}
 
 	data, err := json.Marshal(s)
