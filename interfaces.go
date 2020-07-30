@@ -7,12 +7,13 @@ import (
 )
 
 // Pointer represents a generic json pointer
-
 type Pointer interface {
 	//Refs returns a slice containing all the (ordered) references of a pointer
 	Refs() []string
 	//String formats the references as a slash-separated string
 	String() string
+
+	json.Marshaler
 }
 
 type jsonPointer struct {
@@ -25,6 +26,10 @@ func (jp *jsonPointer) Refs() []string {
 
 func (jp *jsonPointer) String() string {
 	return jp.p.String()
+}
+
+func (jp *jsonPointer) MarshalJSON() ([]byte, error) {
+	return json.Marshal(map[string]string{"$ref": "#" + jp.String()})
 }
 
 func NewPointer(path string) (Pointer, error) {
@@ -43,7 +48,6 @@ func newPointerFromRefs(refs []string) Pointer {
 }
 
 //Schema is a json schema
-
 type Schema interface {
 	json.Marshaler
 	json.Unmarshaler

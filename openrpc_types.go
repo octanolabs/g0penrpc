@@ -61,12 +61,12 @@ type Components struct {
 }
 
 type ContentDescriptor struct {
-	Name/* required */ string              `json:"name"`
-	Summary                         string `json:"summary"`
-	Description                     string `json:"description"`
-	Required                        bool   `json:"required"`
-	Deprecated                      bool   `json:"deprecated"`
-	Schema/* required */ *Reference        `json:"schema"`
+	Name/* required */ string           `json:"name"`
+	Summary                      string `json:"summary"`
+	Description                  string `json:"description"`
+	Required                     bool   `json:"required"`
+	Deprecated                   bool   `json:"deprecated"`
+	Schema/* required */ Pointer        `json:"schema"`
 }
 
 type ExternalDocs struct {

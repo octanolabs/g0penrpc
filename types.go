@@ -2,9 +2,7 @@ package openrpc
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"github.com/qri-io/jsonschema"
 )
 
 type JSONRegistry struct {
@@ -35,30 +33,6 @@ func (c *JSONRegistry) String() string {
 	return string(bytes)
 }
 
-type Reference struct {
-	*jsonschema.Ref `json:"$ref"`
-}
-
-type Registry struct {
-	*jsonschema.SchemaRegistry
-}
-
-func (r *Registry) GetRef(path string) (*Reference, error) {
-	schema := r.SchemaRegistry.GetKnown(path)
-	if schema == nil {
-		return nil, errors.New("no registered schema with the specified path")
-	}
-
-	ref := &jsonschema.Ref{}
-
-	err := ref.UnmarshalJSON([]byte(path))
-	if err != nil {
-		return nil, errors.New("error parsing ref")
-	}
-
-	return &Reference{Ref: ref}, nil
-}
-
 var (
 	integer = NewSchema()
 	number  = NewSchema()
@@ -66,8 +40,7 @@ var (
 	boolean = NewSchema()
 )
 
-// NewRegistry returns a new schema PointerStore with 4 basic schemas already registered
-
+// NewRegistry returns a new JSON registry with 4 basic schemas already registered
 func NewRegistry() (*JSONRegistry, error) {
 
 	reg := &JSONRegistry{reg: NewPointerRegistry(), pTree: NewPointerTree(newPointerFromRefs([]string{}))}
@@ -97,7 +70,6 @@ func NewRegistry() (*JSONRegistry, error) {
 }
 
 // PointerTree is used to represent the hierarchy of properties of a json object
-
 type PointerTree struct {
 	ptr   Pointer
 	nodes map[string]*PointerTree
@@ -141,7 +113,6 @@ func (pt *PointerTree) equals(opt *PointerTree) bool {
 
 //ResolvePointers recursively marshals a tree;
 //if a tree has no children it is treated as a pointer and used to fetch a Schema from the registry
-
 func (pt *PointerTree) ResolvePointers(reg *PointerStore) (json.RawMessage, error) {
 
 	result := make(map[string]json.RawMessage)
@@ -218,7 +189,6 @@ func (pt *PointerTree) Find(match Pointer) *PointerTree {
 }
 
 // PointerStore is a simple collection of json pointers
-
 type PointerStore struct {
 	m map[string]Schema
 }
