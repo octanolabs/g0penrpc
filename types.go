@@ -2,72 +2,7 @@ package openrpc
 
 import (
 	"encoding/json"
-	"fmt"
 )
-
-type JSONRegistry struct {
-	reg   *PointerStore
-	pTree *PointerTree
-}
-
-func (c *JSONRegistry) Register(p Pointer, item Schema) {
-	c.reg.Set(p, item)
-	c.pTree.Insert(p)
-}
-
-func (c *JSONRegistry) MarshalJSON() ([]byte, error) {
-
-	j, err := c.pTree.ResolvePointers(c.reg)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return json.Marshal(j)
-}
-
-func (c *JSONRegistry) String() string {
-
-	bytes, _ := json.MarshalIndent(c, "", " ")
-
-	return string(bytes)
-}
-
-var (
-	integer = NewSchema()
-	number  = NewSchema()
-	str     = NewSchema()
-	boolean = NewSchema()
-)
-
-// NewRegistry returns a new JSON registry with 4 basic schemas already registered
-func NewRegistry() (*JSONRegistry, error) {
-
-	reg := &JSONRegistry{reg: NewPointerRegistry(), pTree: NewPointerTree(newPointerFromRefs([]string{}))}
-
-	err := integer.UnmarshalJSON([]byte(`{ "type": "integer" }`))
-	err = number.UnmarshalJSON([]byte(`{ "type": "number" }`))
-	err = str.UnmarshalJSON([]byte(`{ "type": "string" }`))
-	err = boolean.UnmarshalJSON([]byte(`{ "type": "boolean" }`))
-
-	if err != nil {
-		return nil, err
-	}
-
-	p, err := NewPointer("#/components/schemas/integer")
-	reg.Register(p, integer)
-
-	p, err = NewPointer("#/components/schemas/number")
-	reg.Register(p, number)
-
-	p, err = NewPointer("#/components/schemas/str")
-	reg.Register(p, str)
-
-	p, err = NewPointer("#/components/schemas/boolean")
-	reg.Register(p, boolean)
-
-	return reg, nil
-}
 
 // PointerTree is used to represent the hierarchy of properties of a json object
 type PointerTree struct {
@@ -118,10 +53,18 @@ func (pt *PointerTree) ResolvePointers(reg *PointerStore) (json.RawMessage, erro
 	result := make(map[string]json.RawMessage)
 
 	if len(pt.nodes) == 0 {
-		fmt.Println(pt.ptr.String())
-		b, err := reg.Get(pt.ptr).MarshalJSON()
-		if err != nil {
-			return nil, err
+
+		var (
+			b   = make([]byte, 0)
+			err error
+		)
+
+		//fmt.Println(pt.ptr.String())
+		if sch, ok := reg.Get(pt.ptr); ok {
+			b, err = sch.MarshalJSON()
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return b, nil
@@ -152,6 +95,10 @@ func (pt *PointerTree) MarshalJSON() ([]byte, error) {
 func (pt *PointerTree) Insert(p Pointer) *PointerTree {
 
 	elems := p.Refs()
+
+	if len(elems) == 0 {
+		return pt
+	}
 
 	if len(elems) == 1 {
 		pt.nodes[elems[0]] = NewPointerTree(p)
@@ -193,13 +140,18 @@ type PointerStore struct {
 	m map[string]Schema
 }
 
-func (r *PointerStore) Set(p Pointer, item Schema) {
-	if _, ok := r.m[p.String()]; !ok {
-		r.m[p.String()] = item
+func (r *PointerStore) Set(pointer Pointer, item Schema) {
+	p := pointer.String()
+	if pointer == nil {
+		p = "/"
+	}
+	if _, ok := r.m[p]; !ok {
+		r.m[p] = item
 	}
 }
-func (r *PointerStore) Get(p Pointer) Schema {
-	return r.m[p.String()]
+func (r *PointerStore) Get(p Pointer) (s Schema, ok bool) {
+	s, ok = r.m[p.String()]
+	return
 }
 
 func NewPointerRegistry() *PointerStore {
